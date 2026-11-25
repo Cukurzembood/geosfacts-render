@@ -126,6 +126,12 @@ jobs:
           path: frames/
           merge-multiple: true
 
+      # ubuntu-latest runners do NOT ship ffmpeg: install it, or the
+      # stitch step fails with FileNotFoundError: 'ffmpeg' (seen in run
+      # 45682039507 — all 10 chunks rendered, stitch died on this).
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: Stitch frames + audio into final MP4
         run: |
           python3 scripts/stitch.py --frames-dir frames --fps 30 \
