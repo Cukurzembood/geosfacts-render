@@ -1,0 +1,139 @@
+# Render a cartoon 3D short in parallel on GitHub Actions.
+#
+# How it works:
+#   1. `prepare` splits the composition's frame range into N contiguous
+#      chunks (default 10) and emits them as a job matrix.
+#   2. `render-chunk` runs one job per chunk, all in parallel. Each job
+#      checks out this repo, installs Node deps, and renders ONLY its
+#      frame range as a JPEG image sequence with Remotion
+#      (`--frames=start-end --sequence`), then uploads the frames as an
+#      artifact. No video encoding happens here, so chunks never need
+#      each other's output.
+#   3. `stitch` downloads all chunk artifacts, sorts the frames by their
+#      global frame number, verifies none are missing, and joins them
+#      with ffmpeg into the final 1080x1920 MP4, muxing in audio/mix.wav.
+#      The finished video is uploaded as the `final-video` artifact.
+#
+# This is the poster's approach from the Threads post (10 parallel
+# machines, ~25 min for a 60 s video). The cartoon-3d-short skill itself
+# contains no parallel-rendering support; this workflow is custom.
+#
+# Costs: parallel jobs save WALL-CLOCK time, not Actions minutes.
+# 10 jobs x ~10 min = ~100 Actions minutes per render. GitHub free tier
+# gives 2,000 minutes/month on PRIVATE repos and unlimited minutes on
+# PUBLIC repos (all runners are 2-core). Keep this repo public or watch
+# the budget: ~20 renders/month on a private repo at default settings.
+
+name: Render short (parallel)
+
+on:
+  workflow_dispatch:
+    inputs:
+      composition:
+        description: 'Composition ID to render'
+        required: true
+        default: 'BridgeShort'
+        type: string
+      total_frames:
+        description: 'Total frames in the composition (BridgeShort = 2025)'
+        required: true
+        default: '2025'
+        type: string
+      chunks:
+        description: 'Number of parallel render jobs (runners)'
+        required: true
+        default: '10'
+        type: string
+      scale:
+        description: 'Render scale (1 = 1080x1920, 1.3333 = 2K 1440x2560)'
+        required: true
+        default: '1'
+        type: string
+      jpeg_quality:
+        description: 'JPEG quality for chunk frames (70-100)'
+        required: true
+        default: '90'
+        type: string
+      crf:
+        description: 'x264 CRF for the final video (lower = better; 16 is the skill default)'
+        required: true
+        default: '16'
+        type: string
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.chunks.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: chunks
+        run: |
+          MATRIX=$(python3 scripts/compute-chunks.py \
+            --total-frames "${{ inputs.total_frames }}" \
+            --chunks "${{ inputs.chunks }}")
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  render-chunk:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Headless software GL: GitHub runners have no GPU. `swangle` is the
+      # same backend Remotion Lambda/Cloud Run default to.
+      # --frames=start-end is inclusive; --sequence writes one JPEG per
+      # frame named element-<global-frame-number>.jpg into the output dir.
+      - name: Render frames ${{ matrix.start }}-${{ matrix.end }}
+        run: |
+          npx remotion render src/index.ts "${{ inputs.composition }}" "out/chunk-${{ matrix.chunk }}" \
+            --frames="${{ matrix.start }}-${{ matrix.end }}" \
+            --sequence --image-format=jpeg --jpeg-quality="${{ inputs.jpeg_quality }}" \
+            --gl=swangle --scale="${{ inputs.scale }}" --log=info
+        env:
+          CI: 'true'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frames-chunk-${{ matrix.chunk }}
+          path: out/chunk-${{ matrix.chunk }}/
+          retention-days: 1
+
+  stitch:
+    needs: render-chunk
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # All chunk artifacts merged into one folder. Filenames are the
+      # global frame numbers, so there are no collisions between chunks.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: frames-chunk-*
+          path: frames/
+          merge-multiple: true
+
+      - name: Stitch frames + audio into final MP4
+        run: |
+          python3 scripts/stitch.py --frames-dir frames --fps 30 \
+            --audio audio/mix.wav --output final.mp4 \
+            --total-frames "${{ inputs.total_frames }}" --crf "${{ inputs.crf }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-video
+          path: final.mp4
+          retention-days: 7
