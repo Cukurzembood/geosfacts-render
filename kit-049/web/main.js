@@ -1,7 +1,8 @@
 import * as THREE from './lib/three.module.js';
 import * as T from './toon.js';
 import * as P from './paint.js';
-import { SHOTS, TOTAL, shotAt, camAt, dofAt, LIGHTS, lightFor, actorsAt, worldAt, fxAt } from './story.js';
+import { SHOTS, TOTAL, WORLD, shotAt, camAt, dofAt, LIGHTS, lightFor, actorsAt, worldAt, fxAt } from './story.js';
+import { buildWorld } from './worlds.js';
 
 const W = 1080, H = 1920;
 const canvas = document.getElementById('c');
@@ -88,10 +89,16 @@ scene.add(sun); scene.add(sun.target);
 scene.fog = new THREE.Fog('#ffffff', 40, 600);
 
 // ---------- world ----------
+// One world per video (story.js WORLD). The bridge set is built inline below
+// only when WORLD === 'bridge'; other worlds are built by web/worlds.js.
+// These bindings are hoisted so worldState/applyLight can reach them.
+let waterU = null, columns = [], entab = null, roofG = null, cella = null,
+  bannerG = null, bannerCloth = null, gateStone = [], eagle = null, braces = [];
 const DECK = 6, HALF = 26, BW = 2.3; // deck top height, half length, half width
 const world = new THREE.Group(); scene.add(world);
+if (WORLD === 'bridge') {
 // river
-const waterU = { t: { value: 0 }, deep: { value: new THREE.Color('#2f6f8f') }, shal: { value: new THREE.Color('#5fa8bf') }, glint: { value: new THREE.Color('#e9f6ff') } };
+waterU = { t: { value: 0 }, deep: { value: new THREE.Color('#2f6f8f') }, shal: { value: new THREE.Color('#5fa8bf') }, glint: { value: new THREE.Color('#e9f6ff') } };
 const waterMat = new THREE.ShaderMaterial({
   uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...waterU }, fog: true,
   vertexShader: `#include <fog_pars_vertex>
@@ -142,7 +149,7 @@ for (const x of PILES_X) {
   for (const s of [-1, 1]) { const b = add(tbox(0.18, 6.0, 0.22, 2), M.beamDark, x + 0.32, 2.8, 0, world); b.rotation.x = s * Math.atan2(3.6, 5.6); }
 }
 // longitudinal diagonal braces between bents (one breaks in shot 8)
-const braces = [];
+braces = [];
 for (let i = 0; i < PILES_X.length - 1; i++) for (const z of [-1.8, 1.8]) {
   const x0 = PILES_X[i], x1 = PILES_X[i + 1], L = Math.hypot(6, 3.4);
   const b = add(tbox(L, 0.22, 0.18, 2), M.beamDark, (x0 + x1) / 2, 3.2, z + Math.sign(z) * 0.36, world); b.rotation.z = (i % 2 ? 1 : -1) * Math.atan2(3.4, 6);
@@ -160,15 +167,15 @@ for (let x = -HALF + 2; x <= HALF - 2; x += 2.5) for (const z of [-BW + 0.12, BW
 for (const z of [-BW + 0.12, BW - 0.12]) { add(tbox(HALF * 2 - 4, 0.16, 0.2, 2), M.beam, 0, DECK + 1.12, z, world); add(tbox(HALF * 2 - 4, 0.1, 0.12, 2), M.beam, 0, DECK + 0.6, z, world); }
 // gate at the near end (x=-20.2)
 const gate = new THREE.Group(); world.add(gate);
-const gateStone = [];
+gateStone = [];
 for (const z of [-2.95, 2.95]) { gateStone.push(add(tbox(1.1, 5.2, 1.1, 1.6), M.stone, -20.2, DECK + 2.6, z, gate)); gateStone.push(add(tbox(1.4, 0.4, 1.4, 1.6), M.stone, -20.2, DECK + 5.3, z, gate)); }
 gateStone.push(add(tbox(1.2, 0.9, 7.2, 1.6), M.stone, -20.2, DECK + 5.9, 0, gate));
-const eagle = add(new THREE.ConeGeometry(0.35, 0.9, 4), M.bronze, -20.2, DECK + 6.8, 0, gate);
+eagle = add(new THREE.ConeGeometry(0.35, 0.9, 4), M.bronze, -20.2, DECK + 6.8, 0, gate);
 // banner pole + banner
-const bannerG = new THREE.Group(); bannerG.position.set(-22.6, DECK, -3.3); world.add(bannerG);
+bannerG = new THREE.Group(); bannerG.position.set(-22.6, DECK, -3.3); world.add(bannerG);
 add(new THREE.CylinderGeometry(0.07, 0.07, 6.2, 8), M.wood, 0, 3.1, 0, bannerG);
 add(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 8), M.wood, 0, 5.9, 0, bannerG).rotation.x = Math.PI / 2;
-const bannerCloth = add(new THREE.PlaneGeometry(1.4, 2.8, 8, 8), M.banner, 0.06, 4.4, 0, bannerG); bannerCloth.rotation.y = Math.PI / 2;
+bannerCloth = add(new THREE.PlaneGeometry(1.4, 2.8, 8, 8), M.banner, 0.06, 4.4, 0, bannerG); bannerCloth.rotation.y = Math.PI / 2;
 bannerCloth.userData.cloth = bannerCloth.geometry.attributes.position.array.slice();
 // guard hut next to the gate
 const hut = new THREE.Group(); hut.position.set(-25.5, DECK, -6.2); world.add(hut);
@@ -181,16 +188,16 @@ const hill = add(new THREE.SphereGeometry(30, 32, 16), M.hill, TEMPLE.x + 4, -10
 const temple = new THREE.Group(); temple.position.set(TEMPLE.x, 15.2, TEMPLE.z); temple.rotation.y = rx(-80); world.add(temple);
 add(tbox(14, 1.6, 22, 2), M.marbleTop, 0, 0.8, 0, temple);
 for (let i = 0; i < 4; i++) add(tbox(14 - i * 0.0, 0.3, 1.4, 2), M.marbleTop, 0, 0.15 + i * 0.3, 11.3 + i * -0.0 + 0.7 - i * 0.35, temple);
-const cella = add(tbox(9, 7, 13, 2), M.plaster, 0, 5.1, -3.5, temple);
-const columns = [];
+cella = add(tbox(9, 7, 13, 2), M.plaster, 0, 5.1, -3.5, temple);
+columns = [];
 const colGeo = new THREE.CylinderGeometry(0.55, 0.62, 7, 14); colGeo.translate(0, 3.5, 0);
 const colPos = [];
 for (let i = 0; i < 6; i++) colPos.push([-5.6 + i * 2.24, 9.5]);
 for (let i = 0; i < 5; i++) { colPos.push([-5.6, 7 - i * 3.6]); colPos.push([5.6, 7 - i * 3.6]); }
 for (const [x, z] of colPos) { const c = add(colGeo, M.marble, x, 1.6, z, temple); c.userData.base = c.position.clone(); columns.push(c); }
-const entab = add(tbox(13, 1.1, 21, 2), M.marbleTop, 0, 9.15, -0.5, temple);
+entab = add(tbox(13, 1.1, 21, 2), M.marbleTop, 0, 9.15, -0.5, temple);
 const pedShape = new THREE.Shape(); pedShape.moveTo(-6.8, 0); pedShape.lineTo(6.8, 0); pedShape.lineTo(0, 2.6); pedShape.closePath();
-const roofG = new THREE.Group(); roofG.position.set(0, 9.7, -0.5); temple.add(roofG);
+roofG = new THREE.Group(); roofG.position.set(0, 9.7, -0.5); temple.add(roofG);
 const ped = add(new THREE.ExtrudeGeometry(pedShape, { depth: 21.6, bevelEnabled: false }), M.marbleTop, 0, 0, -10.8, roofG);
 for (const s of [-1, 1]) { const rf = add(tbox(7.4, 0.35, 22.2, 2), M.roof, s * 3.35, 1.3, 0, roofG); rf.rotation.z = -s * Math.atan2(2.6, 6.8); }
 entab.userData.base = entab.position.clone(); roofG.userData.base = roofG.position.clone();
@@ -220,6 +227,12 @@ for (let i = 0; i < 26; i++) { const s = i % 2 ? 1 : -1; if (s < 0) { rt(); rt()
 for (let i = 0; i < 16; i++) { const a = rt() * Math.PI * 2, d = 160 + rt() * 160; const h = add(new THREE.SphereGeometry(40 + rt() * 40, 20, 10), i % 2 ? M.hill : M.hillFar, Math.cos(a) * d, -12, Math.sin(a) * d, world, { cast: false }); h.scale.y = 0.5 + rt() * 0.3; }
 for (let i = 0; i < 14; i++) { const a = rt() * Math.PI * 2, d = 520 + rt() * 200, hh = 120 + rt() * 120, r_ = 110 + rt() * 70; const g = new THREE.Group(); g.position.set(Math.cos(a) * d, -5, Math.sin(a) * d); world.add(g); add(new THREE.ConeGeometry(r_, hh, 7), M.mount, 0, hh / 2, 0, g, { cast: false }); add(new THREE.ConeGeometry(r_ * 0.3, hh * 0.3, 7), M.snow, 0, hh * 0.86, 0, g, { cast: false }); }
 
+} else {
+  // Per-video world from web/worlds.js (bathroom for 049 v2, ...). The ctx
+  // hands the builder the engine helpers it needs; the bridge set above
+  // is skipped entirely so no river/hills show through the room.
+  buildWorld(WORLD, { THREE, scene, world, add, box, tbox, texM, toon, P, T, rx, DECK });
+}
 // clouds: painted billboards far away (no fog, no ink)
 const clouds = [];
 { const r = P.rng(90);
@@ -325,7 +338,7 @@ function applyLight(L, f) {
   scene.fog.color.set(L.fog); scene.fog.near = L.fogNear; scene.fog.far = L.fogFar;
   skyU.top.value.set(L.skyTop); skyU.hor.value.set(L.skyHor); skyU.sunCol.value.set(L.sunDisc || '#000'); skyU.sunSize.value = L.sunSize || 0;
   inkU.sat.value = L.sat; inkU.gain.value.set(L.gain || '#ffffff'); inkU.lift.value.set(L.lift || '#000000');
-  waterU.deep.value.set(L.waterDeep); waterU.shal.value.set(L.waterShal); waterU.glint.value.set(L.glint);
+  if (waterU) { waterU.deep.value.set(L.waterDeep); waterU.shal.value.set(L.waterShal); waterU.glint.value.set(L.glint); }
 }
 function placeSun(L, focus) {
   // sun direction from azimuth/elevation in world space
@@ -336,6 +349,7 @@ function placeSun(L, focus) {
 }
 
 function worldState(S, f) {
+  if (WORLD !== 'bridge') return; // other worlds are static (see web/worlds.js)
   // temple collapse
   const k = S.collapse; // 0..1+
   columns.forEach((c, i) => {

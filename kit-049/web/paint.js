@@ -147,6 +147,20 @@ export function helmetInside(reveal = 1) {
   g.strokeStyle = '#cbbfa9'; g.lineWidth = 3; g.beginPath(); g.moveTo(332, 772); g.lineTo(702, 767); g.stroke();
   return c;
 }
+export function tiles(seed = 20, base = [205, 18, 82], accent = [32, 45, 78], tw = 64, th = 64) {
+  // bathroom wall/floor tiles: subtle per-tile lightness variance + grout lines.
+  const [c, g] = cv(512, 512), r = rng(seed);
+  g.fillStyle = '#cfc8b8'; g.fillRect(0, 0, 512, 512); // grout
+  for (let row = 0; row < 512 / th; row++) for (let col = 0; col < 512 / tw; col++) {
+    const x = col * tw, y = row * th, L = base[2] - 4 + r() * 8;
+    const acc = (row + col) % 7 === 3; // sparse accent tile
+    g.fillStyle = acc ? hsl(accent[0], accent[1], accent[2] - 3 + r() * 6) : hsl(base[0], base[1], L);
+    g.fillRect(x + 2, y + 2, tw - 4, th - 4);
+    g.fillStyle = `hsla(${base[0]},${base[1]}%,${Math.min(96, L + 9)}%,.55)`; g.fillRect(x + 2, y + 2, tw - 4, 5);
+    g.fillStyle = `hsla(${base[0]},${base[1]}%,${Math.max(20, L - 10)}%,.5)`; g.fillRect(x + 2, y + th - 7, tw - 4, 5);
+  }
+  return c;
+}
 export function radial(col = '0,0,0', a = 0.55) {
   const [c, g] = cv(128, 128), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
   gr.addColorStop(0, `rgba(${col},${a})`); gr.addColorStop(0.55, `rgba(${col},${a * 0.6})`); gr.addColorStop(1, `rgba(${col},0)`);
