@@ -7,6 +7,8 @@ import type { Place, FxPlace, Stage } from "../bridge/cast";
 import { Pen, fxContact } from "../bridge/toon";
 import { nerdFront, nerdSide } from "./nerd";
 import { mouthCard, brainCard, windCard, puddleCard } from "./sets050";
+import { dustMotes, leaves, birds, spotGlow } from "./ambient";
+import { breathePhase, pendulumSwing } from "./lib/motion";
 import { FPS, charPos, walkPhase, talkGest, talkExpr, shotAt, shotU, glide } from "./story050";
 
 export { Pool, Actor, Fx, SU };
@@ -66,18 +68,54 @@ export const stage050 = (id: number, f: number): Stage => {
   // with it. Never hardcode a frame range here.
   const shot = shotAt(f);
   const u = shotU(f);
+  // v4 ambient life: slow breath (4 s cycle), gentle weight-shift tilt and
+  // head sway — the nerd never holds a dead-frozen pose between gestures.
+  const breath = breathePhase(t);
+  const sway = 1.2 * Math.sin(t * 0.9);
+  const headSway = 1.5 * Math.sin(t * 0.7 + 1);
   const nerd = (draw: (p: Pen) => void, size: [number, number, number], mirror = false) => {
     out.places.push({ key: `nerd050|${id}|${q(walkPhase(f), 60)}|${blink}`, x: pos.x, y: pos.y, z: pos.z, mirror, draw, size });
+  };
+  // ---- ambient Fx helpers (v4): every shot gets >= 2 moving layers ----
+  // Dust motes drifting in the spotlight, in front of the stage. Canvas
+  // 640x360 -> 7 x 3.9 m. Key changes every frame (q(u, 120)) so the drift
+  // is per-frame smooth, like the v2 drop fix.
+  const dust = (x = 0.4, y = 2.2, z = -21.5) => {
+    out.fx.push({ key: `dust|${q(u, 120)}`, cw: 640, ch: 360, draw: (p) => dustMotes(p, t, 3), x, y, z, w: 7, h: 3.9, soft: true });
+  };
+  // Dust in front of a cutaway card (portrait canvas 360x640 -> 3.4 x 6.04 m).
+  const dustCard = () => {
+    out.fx.push({ key: `dustC|${q(u, 120)}`, cw: 360, ch: 640, draw: (p) => dustMotes(p, t, 5, 12, 360, 640), x: CARD_POS.x, y: CARD_POS.y, z: -10.5, w: CARD_W, h: CARD_H, soft: true });
+  };
+  // Breathing spotlight pool on the stage floor (flat, over the static pool).
+  const glow = () => {
+    out.fx.push({ key: `glow|${q(u, 60)}`, cw: 256, ch: 256, draw: (p) => spotGlow(p, t), x: 0.4, y: 0.372, z: -23.8, w: 4.8, h: 4.8, flat: true, rot: 0, soft: true });
+  };
+  // Leaves drifting across the frame on the wind. Canvas 640x300.
+  const leafFx = (x: number, y: number, z: number) => {
+    out.fx.push({ key: `leaf|${q(u, 120)}`, cw: 640, ch: 300, draw: (p) => leaves(p, t, 5), x, y, z, w: 6, h: 2.8, soft: true });
+  };
+  // Birds crossing the sky. Canvas 640x240.
+  const birdFx = (x: number, y: number, z: number) => {
+    out.fx.push({ key: `bird|${q(u, 120)}`, cw: 640, ch: 240, draw: (p) => birds(p, t, 9), x, y, z, w: 12, h: 4.5, soft: true });
   };
 
   if (id === 1) {
     // walks onto the stage from the wings, books under his arm
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "walk", expr: "smile", blink, book: "stack" }), [1080, 1800, 1.8]);
+    // v4: breathing + ambient — dust in the spotlight, leaves drifting
+    // across the stage front, birds over the library (clouds drift, world).
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "walk", expr: "smile", blink, book: "stack", breath }), [1080, 1800, 1.8]);
     blobStage(out, pos.x, pos.z);
+    dust();
+    leafFx(0, 1.5, -20.5);
+    birdFx(0, 9, -26);
   } else if (id === 2) {
     // at the podium: opens his mouth to speak — shock, mouth suddenly dry
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "shock", blink, book: "none", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 1.8) }), [1440, 2400, 2.4]);
+    // v4: breathing + weight shift + head sway; dust + breathing spotlight.
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "shock", blink, book: "none", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 1.8), breath, tilt: sway }), [1440, 2400, 2.4]);
     blobStage(out, pos.x, pos.z);
+    dust();
+    glow();
   } else if (id === 3 || id === 4) {
     // mouth cutaway: three taps pour watery blue spit
     // NOTE (fix 26 Nov 2026): the card texture is cached by key, so q(u, 12)
@@ -85,31 +123,49 @@ export const stage050 = (id: number, f: number): Stage => {
     // time — that was half the choppiness. q(u, 120) redraws ~every frame.
     out.fx.push({ key: `mouth|watery|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "watery", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
+    // v4: dust motes float in front of the card (depth) — pool shimmer +
+    // bubbles live inside the card (sets050).
+    dustCard();
   } else if (id === 5) {
     // brain room: the FIGHT OR FLIGHT switch flips to red — eased (v3: the
     // lever used to flip at constant linear speed; glide() accelerates it
     // into the flip and settles it, like the reference's switch moments)
-    out.fx.push({ key: `brain|switch|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, glide(u), "none", u),
+    // v4: brain card redraws per frame now (q(u, 120)) so the LEDs, brain
+    // bob and dial sweep animate smoothly instead of stepping 12x/shot.
+    out.fx.push({ key: `brain|switch|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, glide(u), "none", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
+    dustCard();
   } else if (id === 6) {
     // mouth cutaway: taps drip thick sticky goo (per-frame redraw, see id 3)
     out.fx.push({ key: `mouth|thick|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "thick", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
+    dustCard();
   } else if (id === 7) {
     // at the podium, worried: hand to throat, thinking
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "think", blink, book: "none", gest: talkGest(f, shot.a) * 0.6 }), [1440, 2400, 2.4]);
+    // v4: breathing + weight shift + slow head sway; dust + breathing light.
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "think", blink, book: "none", gest: talkGest(f, shot.a) * 0.6, headTilt: headSway, breath, tilt: sway }), [1440, 2400, 2.4]);
     blobStage(out, pos.x, pos.z);
+    dust();
+    glow();
   } else if (id === 8) {
     // close-up: tries to speak, tongue stuck — shock
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "shock", blink, book: "none", gest: talkGest(f, shot.a) * 0.5 }), [1800, 3000, 3.0]);
+    // v4: breathing + weight shift + head sway; dust + breathing light.
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "shock", blink, book: "none", gest: talkGest(f, shot.a) * 0.5, headTilt: headSway, breath, tilt: sway }), [1800, 3000, 3.0]);
     blobStage(out, pos.x, pos.z);
+    dust();
+    glow();
   } else if (id === 9) {
     // mouth cutaway: tongue glued to the roof, goo strands
-    out.fx.push({ key: `mouth|glued|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "glued", u),
+    // v4: card redraws per frame now (was q(u, 12)) so the tongue pulse +
+    // sliding drip animate smoothly; dust floats in front for depth.
+    out.fx.push({ key: `mouth|glued|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "glued", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
+    dustCard();
   } else if (id === 10) {
     // side tracking on the campus path: fast shallow mouth breathing
-    nerd((p) => nerdSide(p, { phase: walkPhase(f), mode: "walk", expr: "smile", blink, book: "stack" }), [1080, 1800, 1.8], true);
+    // v4: breathing under the walk; birds + leaves + drifting clouds join
+    // the wind + shimmering puddle — the busiest outdoor shot.
+    nerd((p) => nerdSide(p, { phase: walkPhase(f), mode: "walk", expr: "smile", blink, book: "stack", breath }), [1080, 1800, 1.8], true);
     blob(out, pos.x, pos.z);
     // wind gusts streaming past him + a puddle shrinking on the path
     // (v3: wind redrawn per frame + eased/faded in sets050, and moved
@@ -117,34 +173,62 @@ export const stage050 = (id: number, f: number): Stage => {
     out.fx.push({ key: `wind|${q(u, 120)}`, cw: 560, ch: 280, draw: (p) => windCard(p, u, 1),
       x: pos.x + 0.4, y: 0.9, z: pos.z - 0.8, w: 2.4, h: 1.2, soft: true });
     const pw = 2.4 - 1.2 * glide(u); // eased shrink (v3: was linear)
-    out.fx.push({ key: `puddle|${q(u, 60)}`, cw: 256, ch: 256, draw: (p) => puddleCard(p),
+    out.fx.push({ key: `puddle|${q(u, 120)}`, cw: 256, ch: 256, draw: (p) => puddleCard(p, u),
       x: 2.8, y: 0.03, z: -5, w: pw, h: pw * 0.6, flat: true, rot: 0 });
+    leafFx(-2, 1.2, pos.z - 0.5);
+    birdFx(-20, 10, -4);
   } else if (id === 11) {
     // at the podium, breathing fast and shallow; wind gusts across the stage
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "think", blink, book: "none", gest: talkGest(f, shot.a) * 0.5 }), [1440, 2400, 2.4]);
+    // v4: breathing + weight shift + head sway; dust + leaves carried by the
+    // gusts + breathing spotlight.
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "think", blink, book: "none", gest: talkGest(f, shot.a) * 0.5, headTilt: headSway, breath, tilt: sway }), [1440, 2400, 2.4]);
     blobStage(out, pos.x, pos.z);
     out.fx.push({ key: `wind|${q(u, 120)}`, cw: 560, ch: 280, draw: (p) => windCard(p, u, -1),
       x: pos.x + 0.6, y: 1.1, z: pos.z - 0.8, w: 2.6, h: 1.3, soft: true });
+    dust();
+    leafFx(0.4, 1.6, -21);
+    glow();
   } else if (id === 12) {
     // brain room: interview screen vs bear screen
-    out.fx.push({ key: `brain|screens|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, 1, "none", u),
+    // v4: per-frame redraw (was q(u, 12)) for the LEDs / brain bob / dials.
+    out.fx.push({ key: `brain|screens|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, 1, "none", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
+    dustCard();
   } else if (id === 13) {
     // brain room: the bear screen wins
-    out.fx.push({ key: `brain|bear|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, 1, "bear", u),
+    out.fx.push({ key: `brain|bear|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, 1, "bear", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
+    dustCard();
   } else if (id === 14) {
     // at the podium, relieved smile — the brain means well
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: exprBlinkMasked(f, shot.a, 7), blink, book: "none", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 2.2) }), [1440, 2400, 2.4]);
+    // v4: breathing + the PENDULUM gesture (anticipation wind-back, two
+    // decaying swings, body/head trailing the hand) — it lives here, not
+    // in shot 17, because here the right hand is free; in 16/17 both hands
+    // hold the open book, so a hand gesture would be invisible.
+    // Dust + breathing spotlight behind him.
+    const pend14 = pendulumSwing(u);
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: exprBlinkMasked(f, shot.a, 7), blink, book: "none", gest: pend14.hand, headTilt: pend14.head, breath, tilt: pend14.body }), [1440, 2400, 2.4]);
     blobStage(out, pos.x, pos.z);
+    dust();
+    glow();
   } else if (id === 15) {
     // mouth cutaway: taps flow watery blue again (per-frame redraw, see id 3)
     out.fx.push({ key: `mouth|watery2|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "watery", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
+    dustCard();
   } else {
     // bench close-up: talking to camera with his open book (CTA)
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: exprBlinkMasked(f, shot.a, 7), blink, book: "open", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 2.2) }), [1800, 3000, 3.0]);
+    // v4: breathing + weight shift + head sway; birds + leaves + drifting
+    // clouds behind him. (The pendulum gesture lives in shot 14 — here
+    // both hands hold the book, so a hand swing would be invisible.)
+    // Leaves sit BEHIND the nerd (z -4): at z 0.5 they loomed huge in the
+    // camera's near field.
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: exprBlinkMasked(f, shot.a, 7), blink, book: "open",
+      gest: talkGest(f, shot.a),
+      headTilt: 2 * Math.sin(t * 2.2), breath, tilt: sway }), [1800, 3000, 3.0]);
     blob(out, pos.x, pos.z);
+    birdFx(1.8, 8, -14);
+    leafFx(1.8, 1.5, -4);
   }
   return out;
 };

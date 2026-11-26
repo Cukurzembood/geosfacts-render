@@ -20,6 +20,10 @@ export type NerdMode = "stand" | "walk" | "talk";
 export type NerdOpts = {
   phase?: number; mode?: NerdMode; expr?: NerdExpr; blink?: number;
   light?: number; book?: "stack" | "open" | "none"; gest?: number; tilt?: number; headTilt?: number;
+  /** 0..1 phase of a slow ~4 s breath (lib/motion breathePhase). Drives a
+   *  subtle chest rise — the difference between alive and frozen between
+   *  gestures. v4: without this, talk shots hold a dead-still torso. */
+  breath?: number;
 };
 
 const HEAD = { x: 300, y: 360, r: 120 };
@@ -77,9 +81,12 @@ const faceFront = (p: Pen, expr: NerdExpr, blink: number) => {
 /** front view: character faces the camera (walking toward it, standing, talking) */
 export const nerdFront = (p: Pen, opts: NerdOpts = {}) => {
   const { phase = 0, mode = "stand", expr = "smile", blink = 0, light = rad(-120),
-    book = "stack", gest = 0, tilt = 0, headTilt = 0 } = opts;
+    book = "stack", gest = 0, tilt = 0, headTilt = 0, breath = 0 } = opts;
   const two = Math.PI * 2;
-  const bob = mode === "walk" ? 14 * Math.cos(2 * two * phase) : mode === "talk" ? 4 * Math.sin(two * phase * 2) : 0;
+  // v4: slow breath (chest rises ~3 units on a 4 s cycle) under the faster
+  // talk bounce, so the torso never holds dead-still between gestures.
+  const br = 3 * Math.sin(two * breath);
+  const bob = mode === "walk" ? 14 * Math.cos(2 * two * phase) : mode === "talk" ? 4 * Math.sin(two * phase * 2) + br : br;
   const thick = thickAngle(light);
   const ow = 10;
   // ---- legs (not rotated) ----
@@ -144,9 +151,10 @@ export const nerdFront = (p: Pen, opts: NerdOpts = {}) => {
 
 /** side view, facing screen-right (mirror via the billboard for the other way) */
 export const nerdSide = (p: Pen, opts: NerdOpts = {}) => {
-  const { phase = 0, mode = "stand", expr = "smile", blink = 0, light = rad(-120), book = "stack" } = opts;
+  const { phase = 0, mode = "stand", expr = "smile", blink = 0, light = rad(-120), book = "stack", breath = 0 } = opts;
   const two = Math.PI * 2;
-  const bob = mode === "walk" ? 12 * Math.cos(2 * two * phase) : 0;
+  const br = 3 * Math.sin(two * breath);
+  const bob = mode === "walk" ? 12 * Math.cos(2 * two * phase) : br;
   const thick = thickAngle(light);
   const ow = 10;
   const hx = 312, hy = 360 - bob;

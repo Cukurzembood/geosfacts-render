@@ -103,7 +103,16 @@ export const mouthCard = (p: Pen, mode: MouthMode, t: number) => {
     // full pool at the bottom
     const pool = blobPts(540, 1760, { a: 520, b: 150, nTop: 2, nBot: 2, egg: 0, asym: 0, rot: 0, noise: 0.01, seed: 9 });
     p.shadedFill(pool, "#6fc3ef", "#3f8fc4", rad(-120), 200);
-    p.stroke([[80, 1680], [300, 1655], [540, 1675], [780, 1652], [1000, 1672]], 8, "#bfe6fb");
+    // v4 ambient: the pool highlight drifts with the drops, and tiny bubbles
+    // rise through the water — the pool itself is alive, not a flat fill.
+    const shim = 24 * Math.sin(t * Math.PI * 2 * 1.5);
+    p.stroke([[80 + shim, 1680], [300 + shim, 1655], [540 + shim, 1675], [780 + shim, 1652], [1000 + shim, 1672]], 8, "#bfe6fb");
+    for (let i = 0; i < 4; i++) {
+      const bp = (t * 0.9 + i * 0.27) % 1;
+      const by = 1840 - bp * 150;
+      const ba = Math.min(smooth(0, 0.15, bp), 1 - smooth(0.8, 1, bp));
+      if (ba > 0.01) p.ell(300 + i * 160, by, 7, 9, rgba("#bfe6fb", 0.7 * ba), 0);
+    }
   } else if (mode === "thick") {
     // one fat amber drop per tap: slow, accelerates, stretches a sticky
     // strand that snaps mid-fall, then free-falls and splats into the pool.
@@ -124,15 +133,25 @@ export const mouthCard = (p: Pen, mode: MouthMode, t: number) => {
     // low sticky pool
     const pool = blobPts(540, 1830, { a: 480, b: 90, nTop: 2, nBot: 2, egg: 0, asym: 0, rot: 0, noise: 0.01, seed: 9 });
     p.shadedFill(pool, "#c98f2e", "#8a5f1c", rad(-120), 160);
-    p.stroke([[200, 1790], [500, 1770], [820, 1788]], 7, "#e8bc62");
+    // v4 ambient: amber highlight drifts slowly, like the thick pool
+    // breathing — same grammar as the watery pool, slower.
+    const shim = 18 * Math.sin(t * Math.PI * 2 * 0.8);
+    p.stroke([[200 + shim, 1790], [500 + shim, 1770], [820 + shim, 1788]], 7, "#e8bc62");
   } else {
     // glued: tongue stretched up to the palate, goo strands holding it
-    const tongue = blobPts(540, 1150, { a: 430, b: 780, nTop: 2, nBot: 2, egg: 0.35, asym: 0, rot: 0, noise: 0.01, seed: 11 });
+    // v4 ambient: the tongue breathes (subtle pulse) and one slow drip
+    // slides down the middle strand — the glued mouth is dry, not dead.
+    const tpulse = 5 * Math.sin(t * Math.PI * 2 * 0.75);
+    const tongue = blobPts(540, 1150, { a: 430 + tpulse, b: 780, nTop: 2, nBot: 2, egg: 0.35, asym: 0, rot: 0, noise: 0.01, seed: 11 });
     p.shadedFill(tongue, "#e88a96", "#c65a6e", rad(-120), 420);
     for (const x of [330, 540, 750]) {
       p.stroke([[x, 480], [x - 18, 700], [x + 10, 900]], 12, "#d9a441");
       p.ell(x, 500, 14, 20, "#d9a441", 6);
     }
+    const dp = (t * 0.5) % 1;
+    const dy = 520 + dp * dp * 360; // accelerating slide down the strand
+    const da = Math.min(smooth(0, 0.1, dp), 1 - smooth(0.85, 1, dp));
+    if (da > 0.01) p.ell(536, dy, 12, 17, rgba("#d9a441", 0.95 * da), 0);
     // almost-dry patch at the bottom
     const dry = blobPts(540, 1850, { a: 300, b: 60, nTop: 2, nBot: 2, egg: 0, asym: 0, rot: 0, noise: 0.02, seed: 13 });
     p.poly(dry, "#a86a4e", 6);
@@ -182,12 +201,21 @@ export const brainCard = (p: Pen, sw: number, focus: BrainFocus, t: number) => {
   p.dot(745, 590, 9); p.dot(845, 590, 9);
   p.arc(795, 740, 26, 14, 20, 160, 6);
   // worried brain blob on a stand between the screens
-  const brain = blobPts(540, 1080, { a: 92, b: 82, nTop: 2.4, nBot: 2.2, egg: 0, asym: 0.08, rot: 0, noise: 0.03, seed: 15 });
+  // v4 ambient: the brain bobs (breathing) — eyes, mouth and stand move
+  // with it, so it reads as one living blob, not a pasted sticker.
+  const bb = 4 * Math.sin(t * Math.PI * 2 * 2);
+  const brain = blobPts(540, 1080 + bb, { a: 92, b: 82, nTop: 2.4, nBot: 2.2, egg: 0, asym: 0.08, rot: 0, noise: 0.03, seed: 15 });
   p.shadedFill(brain, "#f2a0b5", "#d4738e", rad(-120), 90);
   p.inkRing(brain, 8, 0.6);
-  p.dot(512, 1062, 6); p.dot(568, 1062, 6);
-  p.arc(540, 1110, 16, 9, 200, 340, 5);
-  p.stroke([[540, 1162], [540, 1240]], 8);
+  p.dot(512, 1062 + bb, 6); p.dot(568, 1062 + bb, 6);
+  p.arc(540, 1110 + bb, 16, 9, 200, 340, 5);
+  p.stroke([[540, 1162 + bb], [540, 1240]], 8);
+  // v4 ambient: status LEDs blink along the panel top (staggered phases).
+  for (let i = 0; i < 6; i++) {
+    const cyc = (t * 5 + i * 0.17) % 1;
+    const on = cyc < 0.55;
+    p.ell(200 + i * 130, 1512, 10, 10, on ? "#7cc7ee" : "#3a3444", on ? 4 : 2);
+  }
   // control panel + big lever
   p.poly([[120, 1480], [960, 1480], [960, 1840], [120, 1840]], "#4a4456", 10);
   const lx = 330 + sw * 420; // lever x: left (calm) -> right (fight)
@@ -206,8 +234,11 @@ export const brainCard = (p: Pen, sw: number, focus: BrainFocus, t: number) => {
       p.stroke([[880 + Math.cos(a) * 48, 1560 + Math.sin(a) * 48], [880 + Math.cos(a) * 74, 1560 + Math.sin(a) * 74]], 7, "#e0392b");
     }
   }
-  // small dials
-  for (const [x, v] of [[220, 0.3], [300, 0.7]] as const) {
+  // small dials — v4 ambient: needles sweep slowly instead of sitting dead
+  const dialV = [0.3 + 0.25 * Math.sin(t * Math.PI * 2 * 1.5), 0.7 + 0.2 * Math.sin(t * Math.PI * 2 * 1.5 + 2)];
+  const dialX = [220, 300];
+  for (let di = 0; di < 2; di++) {
+    const x = dialX[di], v = dialV[di];
     p.ell(x, 1760, 26, 26, "#2e2a36", 6);
     p.stroke([[x, 1760], [x + 18 * Math.cos(rad(-90 + v * 180)), 1760 + 18 * Math.sin(rad(-90 + v * 180))]], 6, "#e8c45a");
   }
@@ -237,9 +268,12 @@ export const windCard = (p: Pen, t: number, dir = 1) => {
 
 // ---------------------------------------------------------------------------
 // DRYING PUDDLE — flat blue ellipse on the ground (drawn on a flat Fx card).
+// v4: the highlight drifts slowly across the water, so the puddle shimmers
+// instead of sitting as a dead flat fill. `u` = 0..1 progress inside the shot.
 // ---------------------------------------------------------------------------
-export const puddleCard = (p: Pen) => {
+export const puddleCard = (p: Pen, u = 0) => {
   const pool = blobPts(128, 128, { a: 120, b: 70, nTop: 2, nBot: 2, egg: 0, asym: 0, rot: 0, noise: 0.02, seed: 4 });
   p.shadedFill(pool, "#6fc3ef", "#3f8fc4", rad(-120), 120);
-  p.stroke([[50, 110], [120, 96], [200, 108]], 6, "#bfe6fb");
+  const shim = 30 * Math.sin(u * Math.PI * 2 * 2);
+  p.stroke([[50 + shim, 110], [120 + shim, 96], [200 + shim, 108]], 6, "#bfe6fb");
 };

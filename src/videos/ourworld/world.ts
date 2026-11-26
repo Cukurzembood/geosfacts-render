@@ -195,6 +195,13 @@ export class World {
     for (let i = 0; i < this.clouds.length; i++) {
       const m = this.clouds[i];
       m.lookAt(cam.position.x, m.position.y, cam.position.z);
+      // v4 ambient: clouds drift slowly (+x, ~1.2 m/s = ~68 m over the whole
+      // 57 s video — no wrap, so no pop) and bob gently. Base positions are
+      // kept in userData on first use.
+      if (m.userData.bx === undefined) { m.userData.bx = m.position.x; m.userData.by = m.position.y; }
+      const tSec = f / 30;
+      m.position.x = m.userData.bx + tSec * 1.2;
+      m.position.y = m.userData.by + 2 * Math.sin(tSec * 0.3 + i * 1.3);
     }
     // ---- cast ----
     const st = this.stageFn(id, f);
