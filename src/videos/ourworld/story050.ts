@@ -81,8 +81,11 @@ export const shotU = (f: number) => { const s = shotAt(f); return clamp01((f - s
 export const STAGE_Y = 0.35;
 export const charPos = (f: number): { x: number; y: number; z: number } => {
   const s = shotAt(f), u = shotU(f);
-  if (s.id === 1) return { x: lerp(-5.5, -1.5, u), y: STAGE_Y, z: -23.2 };
-  if (s.id === 10) return { x: 0, y: 0, z: lerp(-8, -2, u) };
+  // NOTE (fix 26 Nov 2026, v3 motion pass): walk-on / tracking positions
+  // used to move at constant linear speed — the nerd started and stopped
+  // at full speed. glide(u) (smootherstep) eases in and out instead.
+  if (s.id === 1) return { x: lerp(-5.5, -1.5, glide(u)), y: STAGE_Y, z: -23.2 };
+  if (s.id === 10) return { x: 0, y: 0, z: lerp(-8, -2, glide(u)) };
   if (s.id === 16 || s.id === 17) return { x: 1.8, y: 0, z: -2 };
   return { x: 0.4, y: STAGE_Y, z: -23.8 };
 };
@@ -173,8 +176,8 @@ const CAMS: Record<number, Key[]> = {
   ],
   // 10: campus side tracking — nerd walks the path, wind + shrinking puddle
   10: [
-    { f: 0, s: (f) => { const z = lerp(-8, -2, f / 105); return dolly([7.5, 2.3, z + 1.5], [0, 1.3, z], 1, { fov: 40 }); } },
-    { f: 50, dur: 40, s: (f) => { const z = lerp(-8, -2, f / 105); return dolly([6.4, 2.0, z + 1.2], [0, 1.25, z], pushK(f, 50, 0.0018), { fov: 38, roll: 0.025 }); } },
+    { f: 0, s: (f) => { const z = lerp(-8, -2, glide(f / 105)); return dolly([7.5, 2.3, z + 1.5], [0, 1.3, z], 1, { fov: 40 }); } },
+    { f: 50, dur: 40, s: (f) => { const z = lerp(-8, -2, glide(f / 105)); return dolly([6.4, 2.0, z + 1.2], [0, 1.25, z], pushK(f, 50, 0.0018), { fov: 38, roll: 0.025 }); } },
   ],
   // 11: stage low angle — breathing at the podium, wind gusts across the stage
   11: [

@@ -217,14 +217,21 @@ export const brainCard = (p: Pen, sw: number, focus: BrainFocus, t: number) => {
 // ---------------------------------------------------------------------------
 // WIND STREAKS — soft white gust lines streaming past (mouth breathing).
 // `t` 0..1 progress inside the shot; `dir` 1 = blows left, -1 = blows right.
+// FIX 26 Nov 2026 (v3): streaks used to travel at constant speed and
+// TELEPORT back on wrap (same bug class as the drops). Now they travel on
+// a smoothstep curve (slow in/out) and fade in/out at the ends, so no
+// streak ever pops in or out.
 // ---------------------------------------------------------------------------
 export const windCard = (p: Pen, t: number, dir = 1) => {
   for (let i = 0; i < 4; i++) {
     const y = 60 + i * 70;
-    const off = ((t * 1.4 + i * 0.27) % 1) * 560 * dir;
+    const ph = (t * 1.4 + i * 0.27) % 1;
+    const tr = ph * ph * (3 - 2 * ph); // eased travel, slow in/out
+    const fade = Math.min(smooth(0, 0.12, ph), 1 - smooth(0.85, 1, ph));
+    const off = tr * 560 * dir;
     const x0 = dir > 0 ? 560 - off : off;
-    p.stroke([[x0, y], [x0 - 150 * dir, y + 18], [x0 - 300 * dir, y + 6]], 10, "rgba(255,255,255,0.85)");
-    p.stroke([[x0 - 40 * dir, y + 40], [x0 - 160 * dir, y + 52]], 7, "rgba(255,255,255,0.6)");
+    p.stroke([[x0, y], [x0 - 150 * dir, y + 18], [x0 - 300 * dir, y + 6]], 10, rgba("#ffffff", 0.85 * fade));
+    p.stroke([[x0 - 40 * dir, y + 40], [x0 - 160 * dir, y + 52]], 7, rgba("#ffffff", 0.6 * fade));
   }
 };
 

@@ -7,7 +7,7 @@ import type { Place, FxPlace, Stage } from "../bridge/cast";
 import { Pen, fxContact } from "../bridge/toon";
 import { nerdFront, nerdSide } from "./nerd";
 import { mouthCard, brainCard, windCard, puddleCard } from "./sets050";
-import { FPS, charPos, walkPhase, talkGest, talkExpr, shotAt, shotU } from "./story050";
+import { FPS, charPos, walkPhase, talkGest, talkExpr, shotAt, shotU, glide } from "./story050";
 
 export { Pool, Actor, Fx, SU };
 export type { Place, FxPlace, Stage };
@@ -24,6 +24,21 @@ const lidAt = (f: number, seed: number) => {
     s += Math.round(15 + 54 * h(seed * 31 + n, 13));
   }
   return 0;
+};
+
+/**
+ * Expression that only changes while the nerd blinks, so a smile<->grin
+ * swap hides behind a 4-frame blink instead of popping mid-sentence.
+ * (Fix 26 Nov 2026, v3: talkExpr swapped every 12 frames = a visible pop
+ * 2.5x/second in the talk shots 14/16/17. The reference clip holds one
+ * expression for seconds and only changes it on a blink.)
+ * Freezes the expression at the latest blink frame at or before f.
+ */
+const exprBlinkMasked = (f: number, start: number, seed: number) => {
+  for (let b = f; b >= start && b > f - 90; b--) {
+    if (lidAt(b, seed) > 0) return talkExpr(b, start);
+  }
+  return talkExpr(start, start);
 };
 
 /** ground contact blob under the nerd (soft multiply pool, like the bridge cast) */
@@ -71,8 +86,10 @@ export const stage050 = (id: number, f: number): Stage => {
     out.fx.push({ key: `mouth|watery|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "watery", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else if (id === 5) {
-    // brain room: the FIGHT OR FLIGHT switch flips to red
-    out.fx.push({ key: `brain|switch|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, u, "none", u),
+    // brain room: the FIGHT OR FLIGHT switch flips to red — eased (v3: the
+    // lever used to flip at constant linear speed; glide() accelerates it
+    // into the flip and settles it, like the reference's switch moments)
+    out.fx.push({ key: `brain|switch|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, glide(u), "none", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else if (id === 6) {
     // mouth cutaway: taps drip thick sticky goo (per-frame redraw, see id 3)
@@ -95,17 +112,19 @@ export const stage050 = (id: number, f: number): Stage => {
     nerd((p) => nerdSide(p, { phase: walkPhase(f), mode: "walk", expr: "smile", blink, book: "stack" }), [1080, 1800, 1.8], true);
     blob(out, pos.x, pos.z);
     // wind gusts streaming past him + a puddle shrinking on the path
-    out.fx.push({ key: `wind|${q(u, 12)}`, cw: 560, ch: 280, draw: (p) => windCard(p, u, 1),
-      x: pos.x + 0.4, y: 1.3, z: pos.z + 0.6, w: 2.4, h: 1.2, soft: true });
-    const pw = 2.4 - u * 1.2;
-    out.fx.push({ key: `puddle|${q(u, 8)}`, cw: 256, ch: 256, draw: (p) => puddleCard(p),
+    // (v3: wind redrawn per frame + eased/faded in sets050, and moved
+    // BEHIND the nerd — streaks used to cross his face, §9 nit #1)
+    out.fx.push({ key: `wind|${q(u, 120)}`, cw: 560, ch: 280, draw: (p) => windCard(p, u, 1),
+      x: pos.x + 0.4, y: 0.9, z: pos.z - 0.8, w: 2.4, h: 1.2, soft: true });
+    const pw = 2.4 - 1.2 * glide(u); // eased shrink (v3: was linear)
+    out.fx.push({ key: `puddle|${q(u, 60)}`, cw: 256, ch: 256, draw: (p) => puddleCard(p),
       x: 2.8, y: 0.03, z: -5, w: pw, h: pw * 0.6, flat: true, rot: 0 });
   } else if (id === 11) {
     // at the podium, breathing fast and shallow; wind gusts across the stage
     nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: "think", blink, book: "none", gest: talkGest(f, shot.a) * 0.5 }), [1440, 2400, 2.4]);
     blobStage(out, pos.x, pos.z);
-    out.fx.push({ key: `wind|${q(u, 12)}`, cw: 560, ch: 280, draw: (p) => windCard(p, u, -1),
-      x: pos.x + 0.6, y: 1.9, z: pos.z + 1.2, w: 2.6, h: 1.3, soft: true });
+    out.fx.push({ key: `wind|${q(u, 120)}`, cw: 560, ch: 280, draw: (p) => windCard(p, u, -1),
+      x: pos.x + 0.6, y: 1.1, z: pos.z - 0.8, w: 2.6, h: 1.3, soft: true });
   } else if (id === 12) {
     // brain room: interview screen vs bear screen
     out.fx.push({ key: `brain|screens|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, 1, "none", u),
@@ -116,7 +135,7 @@ export const stage050 = (id: number, f: number): Stage => {
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else if (id === 14) {
     // at the podium, relieved smile — the brain means well
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: talkExpr(f, shot.a), blink, book: "none", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 2.2) }), [1440, 2400, 2.4]);
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: exprBlinkMasked(f, shot.a, 7), blink, book: "none", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 2.2) }), [1440, 2400, 2.4]);
     blobStage(out, pos.x, pos.z);
   } else if (id === 15) {
     // mouth cutaway: taps flow watery blue again (per-frame redraw, see id 3)
@@ -124,7 +143,7 @@ export const stage050 = (id: number, f: number): Stage => {
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else {
     // bench close-up: talking to camera with his open book (CTA)
-    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: talkExpr(f, shot.a), blink, book: "open", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 2.2) }), [1800, 3000, 3.0]);
+    nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: exprBlinkMasked(f, shot.a, 7), blink, book: "open", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 2.2) }), [1800, 3000, 3.0]);
     blob(out, pos.x, pos.z);
   }
   return out;
