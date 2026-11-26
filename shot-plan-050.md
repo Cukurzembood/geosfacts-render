@@ -79,5 +79,8 @@ the per-beat shot splits in `SHOTS` if a beat moved a lot) — nothing else.
 
 ## Current status (26 Nov 2026, before VO)
 - Visuals rendered on GitHub, SILENT. Estimated timestamps only.
+  Run 45752107746, 18m31s wall clock, all 10 chunks + stitch first pass,
+  zero retries. Output: `video-050-github-test.mp4` (1080×1920, 1710
+  frames, 57.00 s, md5 97e18b920ea933448b842081af1dec24).
 - NOT sync-verified. Mux + retime + sync QC are required follow-up steps
   after the VO exists. Do not present this video as finished/synced.

@@ -18,6 +18,55 @@ export type MouthMode = "watery" | "thick" | "glued";
 const TAP_X = [270, 540, 810];
 const SPOUT_Y = 470;
 
+// --- droplet physics (fix 26 Nov 2026: drops fell at constant linear
+// speed and TELEPORTED from pool back to spout on cycle wrap, and the card
+// texture only refreshed 12x/shot, so the motion read as choppy/glitchy) ---
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+/** smoothstep between a and b */
+const smooth = (a: number, b: number, x: number) => {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+const rgba = (hex: string, a: number) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a.toFixed(3)})`;
+};
+/**
+ * Fall state for one drop cycle, u = 0..1 cycle progress.
+ * Gravity: y follows u^2, so the drop accelerates instead of falling at a
+ * constant speed. alpha fades in at the spout (first 8%) and out at the
+ * pool (last 10%), so the cycle wrap never pops. ry stretches with speed
+ * and squashes on impact; rx widens on impact.
+ */
+const fallState = (u: number) => {
+  const yFrac = u * u;
+  const alpha = Math.min(smooth(0, 0.08, u), 1 - smooth(0.9, 1, u));
+  const stretch = 1 + 0.9 * u;
+  const squash = 1 - 0.45 * smooth(0.92, 1, u);
+  const widen = 1 + 0.7 * smooth(0.92, 1, u);
+  return { yFrac, alpha, ry: stretch * squash, rx: widen / Math.sqrt(stretch) };
+};
+/** Impact ripple: flat ring on the pool surface, expanding + fading over
+ *  the last 12% of the cycle. Drawn before the drop so the drop overlaps it. */
+const ripple = (p: Pen, x: number, y: number, u: number, col: string) => {
+  const k = smooth(0.88, 1, u);
+  if (k <= 0) return;
+  const rx = 14 + 58 * k, ry = 5 + 16 * k;
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i <= 28; i++) {
+    const a = (i / 28) * Math.PI * 2;
+    pts.push([x + Math.cos(a) * rx, y + Math.sin(a) * ry]);
+  }
+  p.stroke(pts, 5, rgba(col, 0.7 * (1 - k)));
+};
+/** Goo splat: flat blob spreading on the pool surface over the last 12%
+ *  of the cycle, fading as it spreads. */
+const splat = (p: Pen, x: number, y: number, u: number, col: string) => {
+  const k = smooth(0.88, 1, u);
+  if (k <= 0) return;
+  p.ell(x, y, 26 + 46 * k, 12 - 4 * k, rgba(col, 0.8 * (1 - k)), 0);
+};
+
 export const mouthCard = (p: Pen, mode: MouthMode, t: number) => {
   // interior: deep red mouth, darker toward the edges
   p.poly([[0, 0], [1080, 0], [1080, 1920], [0, 1920]], "#7a2233", 0);
@@ -33,28 +82,44 @@ export const mouthCard = (p: Pen, mode: MouthMode, t: number) => {
     p.ell(x, SPOUT_Y + 8, 26, 12, "#5a6d80", 6);
   }
   if (mode === "watery") {
-    // thin blue streams + falling drops, staggered per tap
+    // thin blue streams + falling drops, staggered per tap. Drops fall with
+    // gravity (accelerating), fade in at the spout, fade + squash into the
+    // pool with a ripple on impact — no teleport on cycle wrap.
     for (let i = 0; i < 3; i++) {
       const x = TAP_X[i];
       const ph = (t * 2 + i * 0.37) % 1;
       p.stroke([[x, SPOUT_Y + 14], [x, SPOUT_Y + 130]], 10, "#5fb7e8");
-      const dy = SPOUT_Y + 150 + ph * 900;
-      p.ell(x, dy, 16, 24, "#5fb7e8", 6);
-      p.ell(x - 26, SPOUT_Y + 300 + ((ph + 0.5) % 1) * 700, 11, 16, "#7cc7ee", 5);
+      const d = fallState(ph);
+      const dy = SPOUT_Y + 150 + d.yFrac * 1000;
+      ripple(p, x, 1635, ph, "#5fb7e8");
+      p.ell(x, dy, 16 * d.rx, 24 * d.ry, rgba("#5fb7e8", d.alpha), 0);
+      // second, smaller droplet half a cycle out of phase
+      const ph2 = (ph + 0.5) % 1;
+      const d2 = fallState(ph2);
+      const dy2 = SPOUT_Y + 300 + d2.yFrac * 850;
+      ripple(p, x - 26, 1635, ph2, "#7cc7ee");
+      p.ell(x - 26, dy2, 11 * d2.rx, 16 * d2.ry, rgba("#7cc7ee", d2.alpha), 0);
     }
     // full pool at the bottom
     const pool = blobPts(540, 1760, { a: 520, b: 150, nTop: 2, nBot: 2, egg: 0, asym: 0, rot: 0, noise: 0.01, seed: 9 });
     p.shadedFill(pool, "#6fc3ef", "#3f8fc4", rad(-120), 200);
     p.stroke([[80, 1680], [300, 1655], [540, 1675], [780, 1652], [1000, 1672]], 8, "#bfe6fb");
   } else if (mode === "thick") {
-    // one fat amber drop per tap, slow, with a sticky strand to the spout
+    // one fat amber drop per tap: slow, accelerates, stretches a sticky
+    // strand that snaps mid-fall, then free-falls and splats into the pool.
     for (let i = 0; i < 3; i++) {
       const x = TAP_X[i];
       const ph = (t * 0.6 + i * 0.31) % 1;
-      const dy = SPOUT_Y + 60 + ph * 420;
-      p.stroke([[x, SPOUT_Y + 14], [x, dy - 26]], 14, "#c98f2e");
-      p.ell(x, dy, 26, 36, "#d9a441", 8);
-      p.ell(x, dy - 8, 12, 14, "#f0c96a", 0);
+      const d = fallState(ph);
+      const dy = SPOUT_Y + 60 + d.yFrac * 1200;
+      // strand to the spout while still attached, snapping at u ~ 0.4
+      const strandA = 1 - smooth(0.25, 0.45, ph);
+      if (strandA > 0.01) {
+        p.stroke([[x, SPOUT_Y + 14], [x, dy - 26 * d.ry]], 14, rgba("#c98f2e", strandA));
+      }
+      splat(p, x, 1745, ph, "#c98f2e");
+      p.ell(x, dy, 26 * d.rx, 36 * d.ry, rgba("#d9a441", d.alpha), 0);
+      p.ell(x, dy - 8 * d.ry, 12 * d.rx, 14 * d.ry, rgba("#f0c96a", d.alpha * 0.9), 0);
     }
     // low sticky pool
     const pool = blobPts(540, 1830, { a: 480, b: 90, nTop: 2, nBot: 2, egg: 0, asym: 0, rot: 0, noise: 0.01, seed: 9 });

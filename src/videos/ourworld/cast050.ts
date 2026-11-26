@@ -65,15 +65,18 @@ export const stage050 = (id: number, f: number): Stage => {
     blobStage(out, pos.x, pos.z);
   } else if (id === 3 || id === 4) {
     // mouth cutaway: three taps pour watery blue spit
-    out.fx.push({ key: `mouth|watery|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "watery", u),
+    // NOTE (fix 26 Nov 2026): the card texture is cached by key, so q(u, 12)
+    // only redrew the card 12x/shot and the drops jumped ~9 frames at a
+    // time — that was half the choppiness. q(u, 120) redraws ~every frame.
+    out.fx.push({ key: `mouth|watery|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "watery", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else if (id === 5) {
     // brain room: the FIGHT OR FLIGHT switch flips to red
     out.fx.push({ key: `brain|switch|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => brainCard(p, u, "none", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else if (id === 6) {
-    // mouth cutaway: taps drip thick sticky goo
-    out.fx.push({ key: `mouth|thick|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "thick", u),
+    // mouth cutaway: taps drip thick sticky goo (per-frame redraw, see id 3)
+    out.fx.push({ key: `mouth|thick|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "thick", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else if (id === 7) {
     // at the podium, worried: hand to throat, thinking
@@ -116,8 +119,8 @@ export const stage050 = (id: number, f: number): Stage => {
     nerd((p) => nerdFront(p, { phase: walkPhase(f), mode: "talk", expr: talkExpr(f, shot.a), blink, book: "none", gest: talkGest(f, shot.a), headTilt: 2 * Math.sin(t * 2.2) }), [1440, 2400, 2.4]);
     blobStage(out, pos.x, pos.z);
   } else if (id === 15) {
-    // mouth cutaway: taps flow watery blue again
-    out.fx.push({ key: `mouth|watery2|${q(u, 12)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "watery", u),
+    // mouth cutaway: taps flow watery blue again (per-frame redraw, see id 3)
+    out.fx.push({ key: `mouth|watery2|${q(u, 120)}`, cw: 1080, ch: 1920, draw: (p) => mouthCard(p, "watery", u),
       x: CARD_POS.x, y: CARD_POS.y, z: CARD_POS.z, w: CARD_W, h: CARD_H });
   } else {
     // bench close-up: talking to camera with his open book (CTA)
