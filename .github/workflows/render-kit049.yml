@@ -1,0 +1,126 @@
+# Render cartoon-short-kit video 049 in parallel on GitHub Actions.
+#
+# Mirrors the proven github-parallel workflow (prepare -> N x render-chunk
+# -> stitch), but for the cartoon-short-kit engine instead of Remotion:
+# each chunk runner installs Playwright + Chromium and runs the kit's
+# render.mjs on ONLY its frame range ("start-end"), then uploads the
+# JPEG frames. The stitch job downloads all chunks, verifies the frames
+# are contiguous 0..1608, and joins them with ffmpeg + mix_raw.wav
+# (Arlo VO + SFX, no music) into the final 1080x1920 MP4.
+#
+# Local VM render of this same project ran ~14 frames/min (477/1609 in
+# 34 min) — this parallel variant is the fix for that bottleneck.
+# Costs: public repo, so Actions minutes are unlimited ($0).
+
+name: Render kit-049 (parallel)
+
+on:
+  workflow_dispatch:
+    inputs:
+      total_frames:
+        description: 'Total frames (049 = 1609, 53.62s at 30fps)'
+        required: true
+        default: '1609'
+        type: string
+      chunks:
+        description: 'Number of parallel render jobs (runners)'
+        required: true
+        default: '10'
+        type: string
+      jpeg_quality:
+        description: 'JPEG quality for chunk frames (0-1, kit default 0.96)'
+        required: true
+        default: '0.96'
+        type: string
+      crf:
+        description: 'x264 CRF for the final video (lower = better)'
+        required: true
+        default: '16'
+        type: string
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.chunks.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: chunks
+        run: |
+          MATRIX=$(python3 kit-049/scripts/compute-chunks.py \
+            --total-frames "${{ inputs.total_frames }}" \
+            --chunks "${{ inputs.chunks }}")
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  render-chunk:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: kit-049/package-lock.json
+
+      - name: Install dependencies
+        working-directory: kit-049
+        run: npm ci
+
+      # Headless Chromium + system deps. GitHub runners have no GPU;
+      # render.mjs uses swiftshader software GL (same approach as the
+      # proven Remotion workflow's swangle backend).
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: kit-049
+
+      # render.mjs usage: node render.mjs <outdir> <"start-end"> [step] [quality]
+      # Frames are named fNNNN.jpg by their GLOBAL frame number.
+      - name: Render frames ${{ matrix.start }}-${{ matrix.end }}
+        working-directory: kit-049
+        run: |
+          node render.mjs "out/chunk-${{ matrix.chunk }}" \
+            "${{ matrix.start }}-${{ matrix.end }}" 1 "${{ inputs.jpeg_quality }}"
+        env:
+          CI: 'true'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frames-kit049-chunk-${{ matrix.chunk }}
+          path: kit-049/out/chunk-${{ matrix.chunk }}/
+          retention-days: 1
+
+  stitch:
+    needs: render-chunk
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # All chunk artifacts merged into one folder. Filenames are the
+      # global frame numbers (f0000.jpg ... f1608.jpg), no collisions.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: frames-kit049-chunk-*
+          path: frames/
+          merge-multiple: true
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Stitch frames + audio into final MP4
+        run: |
+          python3 kit-049/scripts/stitch.py --frames-dir frames --fps 30 \
+            --audio kit-049/mix_raw.wav --output final-kit049.mp4 \
+            --total-frames "${{ inputs.total_frames }}" --crf "${{ inputs.crf }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-video-kit049
+          path: final-kit049.mp4
+          retention-days: 7
