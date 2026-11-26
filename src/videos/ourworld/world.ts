@@ -10,9 +10,14 @@ import { grassHD, cobbleHD, stoneHD, water, beam, cloudHD } from "../bridge/pain
 import { LIGHTS, LOOK } from "../bridge/lights";
 import { TONE, CHAR, untone } from "../bridge/shade";
 import { NOINK } from "../bridge/ink";
-import { Pool, Actor, Fx, stage } from "./cast";
+import { Pool, Actor, Fx, stage as stageDefault } from "./cast";
+import type { Stage } from "./cast";
 import { loadKit } from "../bridge/world";
-import { SHOTS, camAt } from "./story";
+import { SHOTS as SHOTS0, camAt as camAt0 } from "./story";
+
+/** story module shape (story.ts / story050.ts both fit): shot list + camera */
+export type StoryMod = { SHOTS: typeof SHOTS0; camAt: typeof camAt0 };
+export type StageFn = (id: number, f: number) => Stage;
 
 export { loadKit };
 
@@ -39,8 +44,12 @@ export class World {
   private cloudMaps: THREE.Texture[];
   private frustum = new THREE.Frustum();
   private m4 = new THREE.Matrix4(); private v = new THREE.Vector3(); private sph = new THREE.Sphere();
+  private story: StoryMod;
+  private stageFn: StageFn;
 
-  constructor(kit: Kit) {
+  constructor(kit: Kit, storyMod: StoryMod = { SHOTS: SHOTS0, camAt: camAt0 }, stageFn: StageFn = stageDefault) {
+    this.story = storyMod;
+    this.stageFn = stageFn;
     const R = this.root, M: Record<string, THREE.Material> = {};
     // ---- sky: 5 colour stops by elevation (same shader approach as the skill) ----
     this.skyMat = new THREE.ShaderMaterial({
@@ -154,9 +163,9 @@ export class World {
   private fx(i: number) { while (this.fxs.length <= i) this.fxs.push(new Fx(this.root)); return this.fxs[i]; }
 
   update(id: number, f: number, cam: THREE.PerspectiveCamera, scene: THREE.Scene) {
-    const s = SHOTS[id - 1], L = LIGHTS[s.light];
+    const s = this.story.SHOTS[id - 1], L = LIGHTS[s.light];
     // ---- camera ----
-    const c = camAt(id, f);
+    const c = this.story.camAt(id, f);
     cam.position.set(...c.pos); cam.up.set(0, 1, 0); cam.lookAt(...c.look); cam.rotateZ(c.roll);
     cam.fov = c.fov; cam.near = 0.2; cam.far = 1500; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     const focus = new THREE.Vector3(...c.look), dist = cam.position.distanceTo(focus);
@@ -188,7 +197,7 @@ export class World {
       m.lookAt(cam.position.x, m.position.y, cam.position.z);
     }
     // ---- cast ----
-    const st = stage(id, f);
+    const st = this.stageFn(id, f);
     this.frustum.setFromProjectionMatrix(this.m4.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
     let ai = 0;
     const used: Actor[] = [];
