@@ -137,7 +137,11 @@ def main() -> int:
             "-pix_fmt", "yuv420p",
         ]
         if audio is not None:
-            cmd += ["-map", "1:a:0", "-c:a", "aac", "-b:a", "192k", "-shortest"]
+            # No -shortest: the VIDEO is the master clock. The 051 VO is
+            # 59.21 s, the frames are 1777/30 = 59.23 s — -shortest cut the
+            # last frame (1776 vs 1777) and failed the frame-count check.
+            # The last ~0.02 s is silent instead; nothing is lost.
+            cmd += ["-map", "1:a:0", "-c:a", "aac", "-b:a", "192k"]
         cmd += ["-movflags", "+faststart", str(args.output)]
         run(cmd)
     finally:
