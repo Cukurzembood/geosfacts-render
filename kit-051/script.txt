@@ -1,0 +1,24 @@
+WHY DOES YOUR NOSE GET STUFFY WHEN YOU LIE DOWN? — kit-051 TEST video
+GeosFact's video 051, rendered with the cartoon-kit on GitHub using the
+EXISTING voiceover.mp3 (59.21 s, Arlo VO). A/B test vs the Claude version
+on YouTube (https://youtube.com/shorts/M9xPB_6eVuA) — same script, same VO.
+No Gemini TTS used (0 requests — quota reserved for the 19:03 prep run).
+
+7 shots, one per script sentence (Whisper sentence starts):
+1.  0.00-7.20   Wait, you breathe fine, then you hit the pillow and your
+                nose clogs up, so what changed?
+2.  7.20-15.22  Inside your nose sit the turbinates, spongy ridges full of
+                blood vessels that warm and filter the air you breathe.
+3. 15.22-23.24  Stand up and gravity helps blood drain down from your
+                head, so those sponges stay slim and air flows free.
+4. 23.24-31.38  Lie flat and blood flows back up into them, they swell
+                like a sponge soaking up water, and the airway narrows.
+5. 31.38-38.54  Your nostrils take turns all day, one swelling up while
+                the other stays open, then they swap every few hours.
+6. 38.54-46.72  Roll onto one side and the lower nostril clogs more, roll
+                over and the blockage follows you, like your nose is
+                playing favorites.
+7. 46.72-59.21  So no cold is sneaking up on you, it is gravity and blood
+                flow teaming up when you lie down. Does your nose do this
+                too? Tell us below, then watch why you can not tickle
+                yourself, and follow.
