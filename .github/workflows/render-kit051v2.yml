@@ -1,0 +1,129 @@
+# Render the 051 TEST video (GeosFact's 051 "Why Does Your Nose Get Stuffy
+# When You Lie Down?") in parallel on GitHub Actions.
+#
+# Same proven pattern as render-kit049.yml (prepare -> N x render-chunk
+# -> stitch): each chunk runner installs Playwright + Chromium and runs
+# the kit's render.mjs on ONLY its frame range ("start-end"), then uploads
+# the JPEG frames. The stitch job downloads all chunks, verifies the
+# frames are contiguous 0..1776, and joins them with ffmpeg + the EXISTING
+# voiceover.mp3 (59.21 s, Arlo VO from the 051 prep — NO Gemini TTS used,
+# 0 requests, quota reserved for the 19:03 pipeline-prep run for 052-056)
+# into the final 1080x1920 MP4.
+#
+# A/B test vs the Claude version on YouTube
+# (https://youtube.com/shorts/M9xPB_6eVuA) — same script, same VO.
+# TEST ONLY — no upload anywhere.
+# Costs: public repo, so Actions minutes are unlimited ($0).
+
+name: Render kit-051v2 (parallel)
+
+on:
+  workflow_dispatch:
+    inputs:
+      total_frames:
+        description: 'Total frames (051 = 1777, 59.23s at 30fps)'
+        required: true
+        default: '1777'
+        type: string
+      chunks:
+        description: 'Number of parallel render jobs (runners)'
+        required: true
+        default: '10'
+        type: string
+      jpeg_quality:
+        description: 'JPEG quality for chunk frames (0-1, kit default 0.96)'
+        required: true
+        default: '0.96'
+        type: string
+      crf:
+        description: 'x264 CRF for the final video (lower = better)'
+        required: true
+        default: '16'
+        type: string
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.chunks.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: chunks
+        run: |
+          MATRIX=$(python3 kit-051v2/scripts/compute-chunks.py \
+            --total-frames "${{ inputs.total_frames }}" \
+            --chunks "${{ inputs.chunks }}")
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  render-chunk:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: kit-051v2/package-lock.json
+
+      - name: Install dependencies
+        working-directory: kit-051v2
+        run: npm ci
+
+      # Headless Chromium + system deps. GitHub runners have no GPU;
+      # render.mjs uses swiftshader software GL (same approach as the
+      # proven Remotion workflow's swangle backend).
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: kit-051v2
+
+      # render.mjs usage: node render.mjs <outdir> <"start-end"> [step] [quality]
+      # Frames are named fNNNN.jpg by their GLOBAL frame number.
+      - name: Render frames ${{ matrix.start }}-${{ matrix.end }}
+        working-directory: kit-051v2
+        run: |
+          node render.mjs "out/chunk-${{ matrix.chunk }}" \
+            "${{ matrix.start }}-${{ matrix.end }}" 1 "${{ inputs.jpeg_quality }}"
+        env:
+          CI: 'true'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frames-kit051v2-chunk-${{ matrix.chunk }}
+          path: kit-051v2/out/chunk-${{ matrix.chunk }}/
+          retention-days: 1
+
+  stitch:
+    needs: render-chunk
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # All chunk artifacts merged into one folder. Filenames are the
+      # global frame numbers (f0000.jpg ... f1776.jpg), no collisions.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: frames-kit051v2-chunk-*
+          path: frames/
+          merge-multiple: true
+
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Stitch frames + audio into final MP4
+        run: |
+          python3 kit-051v2/scripts/stitch.py --frames-dir frames --fps 30 \
+            --audio kit-051v2/voiceover.mp3 --output final-kit-051v2.mp4 \
+            --total-frames "${{ inputs.total_frames }}" --crf "${{ inputs.crf }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-video-kit-051v2
+          path: final-kit-051v2.mp4
+          retention-days: 7
